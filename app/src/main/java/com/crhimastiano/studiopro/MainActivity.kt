@@ -146,7 +146,7 @@ class MainActivity : Activity() {
             isHorizontalScrollBarEnabled = true
             isFillViewport = false
             setBackgroundColor(Color.rgb(16, 16, 19))
-            addView(piano, HorizontalScrollView.LayoutParams(piano.keyboardWidthPx, dp(240)))
+            addView(piano, android.widget.FrameLayout.LayoutParams(piano.keyboardWidthPx, dp(240)))
         }
         content.addView(pianoScroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(240)
