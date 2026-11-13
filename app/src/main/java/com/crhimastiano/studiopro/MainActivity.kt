@@ -146,7 +146,9 @@ class MainActivity : Activity() {
             isHorizontalScrollBarEnabled = true
             isFillViewport = false
             setBackgroundColor(Color.rgb(16, 16, 19))
-            addView(piano, android.widget.FrameLayout.LayoutParams(piano.keyboardWidthPx, dp(240)))
+            // ViewGroup.LayoutParams is sufficient here and avoids coupling the keyboard
+            // to a specific scroll-container LayoutParams implementation.
+            addView(piano, android.view.ViewGroup.LayoutParams(piano.keyboardWidthPx, dp(240)))
         }
         content.addView(pianoScroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(240)
