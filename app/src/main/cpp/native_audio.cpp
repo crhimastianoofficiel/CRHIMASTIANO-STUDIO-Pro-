@@ -1,53 +1,119 @@
 #include <jni.h>
 #include <oboe/Oboe.h>
+
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <memory>
+#include <mutex>
 
-class ToneEngine : public oboe::AudioStreamDataCallback {
+namespace {
+constexpr int kMaxVoices = 16;
+constexpr double kTwoPi = 2.0 * M_PI;
+constexpr float kVoiceAmplitude = 0.12f;
+
+class ToneEngine final : public oboe::AudioStreamDataCallback {
 public:
-    std::atomic<float> frequency{440.0f};
-    std::atomic<bool> playing{false};
-    double phase = 0.0;
-    double sampleRate = 48000.0;
+    struct Voice {
+        std::atomic<float> frequency{440.0f};
+        std::atomic<bool> active{false};
+        // Phase is accessed only by the Oboe callback thread.
+        double phase = 0.0;
+    };
+
+    bool noteOn(int voiceIndex, float frequencyHz) {
+        if (!isValidVoice(voiceIndex) || !std::isfinite(frequencyHz) || frequencyHz <= 0.0f) {
+            return false;
+        }
+        voices_[voiceIndex].frequency.store(frequencyHz, std::memory_order_relaxed);
+        voices_[voiceIndex].active.store(true, std::memory_order_release);
+        return true;
+    }
+
+    void noteOff(int voiceIndex) {
+        if (isValidVoice(voiceIndex)) {
+            voices_[voiceIndex].active.store(false, std::memory_order_release);
+        }
+    }
+
+    void stopAll() {
+        for (auto& voice : voices_) {
+            voice.active.store(false, std::memory_order_release);
+        }
+    }
+
+    void setFrequency(float frequencyHz) {
+        if (std::isfinite(frequencyHz) && frequencyHz > 0.0f) {
+            voices_[0].frequency.store(frequencyHz, std::memory_order_relaxed);
+        }
+    }
 
     oboe::DataCallbackResult onAudioReady(
-        oboe::AudioStream*,
+        oboe::AudioStream* audioStream,
         void* audioData,
         int32_t numFrames
     ) override {
         auto* output = static_cast<float*>(audioData);
-        const float freq = frequency.load();
-        const bool active = playing.load();
-        const double increment = 2.0 * M_PI * freq / sampleRate;
+        const int32_t channelCount = audioStream->getChannelCount();
+        const double sampleRate = static_cast<double>(audioStream->getSampleRate());
+        if (channelCount <= 0 || sampleRate <= 0.0) {
+            return oboe::DataCallbackResult::Stop;
+        }
 
-        for (int32_t i = 0; i < numFrames; ++i) {
-            float sample = 0.0f;
-            if (active) {
-                // Son de test doux, volontairement simple.
-                sample = static_cast<float>(std::sin(phase) * 0.12);
-                phase += increment;
-                if (phase >= 2.0 * M_PI) phase -= 2.0 * M_PI;
+        for (int32_t frame = 0; frame < numFrames; ++frame) {
+            float mixedSample = 0.0f;
+            int activeVoiceCount = 0;
+            for (auto& voice : voices_) {
+                if (!voice.active.load(std::memory_order_acquire)) {
+                    continue;
+                }
+
+                const float frequency = voice.frequency.load(std::memory_order_relaxed);
+                const double safeFrequency = std::min(
+                    static_cast<double>(frequency), sampleRate * 0.45
+                );
+                mixedSample += static_cast<float>(std::sin(voice.phase));
+                voice.phase += kTwoPi * safeFrequency / sampleRate;
+                if (voice.phase >= kTwoPi) {
+                    voice.phase -= kTwoPi;
+                }
+                ++activeVoiceCount;
             }
-            output[i] = sample; // sortie mono
+
+            // Keep multi-note output at a sensible level as additional voices are held.
+            if (activeVoiceCount > 0) {
+                mixedSample *= kVoiceAmplitude / std::sqrt(static_cast<float>(activeVoiceCount));
+            }
+            mixedSample = std::clamp(mixedSample, -0.8f, 0.8f);
+            for (int32_t channel = 0; channel < channelCount; ++channel) {
+                output[frame * channelCount + channel] = mixedSample;
+            }
         }
         return oboe::DataCallbackResult::Continue;
     }
+
+private:
+    static bool isValidVoice(int voiceIndex) {
+        return voiceIndex >= 0 && voiceIndex < kMaxVoices;
+    }
+
+    std::array<Voice, kMaxVoices> voices_{};
 };
 
-static std::shared_ptr<ToneEngine> engine;
-static std::shared_ptr<oboe::AudioStream> stream;
+ToneEngine gEngine;
+std::shared_ptr<oboe::AudioStream> gStream;
+std::mutex gStreamMutex;
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_crhimastiano_studiopro_MainActivity_nativeStart(
-    JNIEnv*, jobject, jfloat frequencyHz
-) {
-    if (!engine) engine = std::make_shared<ToneEngine>();
-    engine->frequency.store(frequencyHz);
-    engine->playing.store(true);
-
-    if (stream && stream->getState() == oboe::StreamState::Started) {
-        return JNI_TRUE;
+bool ensureStreamStarted() {
+    std::lock_guard<std::mutex> lock(gStreamMutex);
+    if (gStream && gStream->getState() == oboe::StreamState::Started) {
+        return true;
+    }
+    if (gStream) {
+        gStream->close();
+        gStream.reset();
     }
 
     oboe::AudioStreamBuilder builder;
@@ -56,51 +122,80 @@ Java_com_crhimastiano_studiopro_MainActivity_nativeStart(
         ->setSharingMode(oboe::SharingMode::Exclusive)
         ->setFormat(oboe::AudioFormat::Float)
         ->setChannelCount(1)
-        ->setSampleRate(48000)
-        ->setDataCallback(engine.get());
+        ->setDataCallback(&gEngine);
 
-    oboe::Result result = builder.openStream(stream);
+    oboe::Result result = builder.openStream(gStream);
     if (result != oboe::Result::OK) {
+        gStream.reset();
         builder.setSharingMode(oboe::SharingMode::Shared);
-        result = builder.openStream(stream);
+        result = builder.openStream(gStream);
     }
-    if (result != oboe::Result::OK || !stream) {
-        engine->playing.store(false);
-        return JNI_FALSE;
+    if (result != oboe::Result::OK || !gStream) {
+        gStream.reset();
+        return false;
     }
 
-    engine->sampleRate = stream->getSampleRate();
-    const oboe::Result startResult = stream->requestStart();
-    if (startResult != oboe::Result::OK) {
-        stream->close();
-        stream.reset();
-        engine->playing.store(false);
+    if (gStream->requestStart() != oboe::Result::OK) {
+        gStream->close();
+        gStream.reset();
+        return false;
+    }
+    return true;
+}
+} // namespace
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_crhimastiano_studiopro_MainActivity_nativeNoteOn(
+    JNIEnv*, jobject, jint voiceIndex, jfloat frequencyHz
+) {
+    if (voiceIndex < 0 || voiceIndex >= kMaxVoices || !std::isfinite(frequencyHz) || frequencyHz <= 0.0f) {
         return JNI_FALSE;
     }
-    return JNI_TRUE;
+    if (!ensureStreamStarted()) {
+        return JNI_FALSE;
+    }
+    return gEngine.noteOn(voiceIndex, frequencyHz) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_crhimastiano_studiopro_MainActivity_nativeNoteOff(
+    JNIEnv*, jobject, jint voiceIndex
+) {
+    gEngine.noteOff(voiceIndex);
+}
+
+// Keep the original single-note JNI entry points for compatibility with existing callers.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_crhimastiano_studiopro_MainActivity_nativeStart(
+    JNIEnv*, jobject, jfloat frequencyHz
+) {
+    if (!ensureStreamStarted()) {
+        return JNI_FALSE;
+    }
+    return gEngine.noteOn(0, frequencyHz) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_crhimastiano_studiopro_MainActivity_nativeSetFrequency(
     JNIEnv*, jobject, jfloat frequencyHz
 ) {
-    if (engine) engine->frequency.store(frequencyHz);
+    gEngine.setFrequency(frequencyHz);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_crhimastiano_studiopro_MainActivity_nativeStop(
     JNIEnv*, jobject
 ) {
-    if (engine) engine->playing.store(false);
+    gEngine.stopAll();
 }
 
 extern "C" JNIEXPORT void JNICALL
 JNI_OnUnload(JavaVM*, void*) {
-    if (engine) engine->playing.store(false);
-    if (stream) {
-        stream->requestStop();
-        stream->close();
-        stream.reset();
+    gEngine.stopAll();
+    std::lock_guard<std::mutex> lock(gStreamMutex);
+    if (gStream) {
+        gStream->requestStop();
+        gStream->close();
+        gStream.reset();
     }
-    engine.reset();
 }

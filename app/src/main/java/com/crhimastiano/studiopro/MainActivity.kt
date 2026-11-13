@@ -11,8 +11,8 @@ import android.widget.TextView
 
 class MainActivity : Activity() {
 
-    private external fun nativeStart(frequencyHz: Float): Boolean
-    private external fun nativeSetFrequency(frequencyHz: Float)
+    private external fun nativeNoteOn(voiceIndex: Int, frequencyHz: Float): Boolean
+    private external fun nativeNoteOff(voiceIndex: Int)
     private external fun nativeStop()
 
     private var statusView: TextView? = null
@@ -53,7 +53,7 @@ class MainActivity : Activity() {
         root.addView(subtitle, matchWrap())
 
         statusView = TextView(this).apply {
-            text = "Prêt — touche une note pour écouter le moteur audio."
+            text = "Prêt — touche une ou plusieurs notes."
             textSize = 14f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
@@ -72,12 +72,13 @@ class MainActivity : Activity() {
             "DO+" to 523.25f
         )
 
-        notes.chunked(4).forEach { rowNotes ->
+        notes.chunked(4).forEachIndexed { rowIndex, rowNotes ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
             }
-            rowNotes.forEach { (label, frequency) ->
+            rowNotes.forEachIndexed { columnIndex, (label, frequency) ->
+                val voiceIndex = rowIndex * 4 + columnIndex
                 val key = Button(this).apply {
                     text = label
                     textSize = 14f
@@ -85,9 +86,9 @@ class MainActivity : Activity() {
                     setTextColor(Color.BLACK)
                     setBackgroundColor(Color.rgb(238, 190, 83))
                     setOnTouchListener { _, event ->
-                        when (event.action) {
-                            MotionEvent.ACTION_DOWN -> {
-                                val started = nativeStart(frequency)
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                                val started = nativeNoteOn(voiceIndex, frequency)
                                 statusView?.text = if (started) {
                                     "Lecture : $label — ${frequency.toInt()} Hz"
                                 } else {
@@ -95,8 +96,9 @@ class MainActivity : Activity() {
                                 }
                                 true
                             }
-                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                                nativeStop()
+                            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP,
+                            MotionEvent.ACTION_CANCEL -> {
+                                nativeNoteOff(voiceIndex)
                                 statusView?.text = "Prêt — moteur audio local."
                                 true
                             }
