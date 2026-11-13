@@ -46,7 +46,7 @@ class StudioHomeActivity : Activity() {
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(18), dp(20), dp(24))
-            setBackgroundColor(background)
+            setBackgroundColor(this@StudioHomeActivity.background)
         }
         val scroll = ScrollView(this).apply {
             isFillViewport = true
