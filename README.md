@@ -2,55 +2,28 @@
 
 Socle initial d'une application de studio musical Android native.
 
-## Contenu
-- Application Android native en Kotlin
-- Interface tactile sombre avec clavier de notes
-- Moteur audio C++ avec Google Oboe et plusieurs voix simultanées
-- Génération locale d'un son de test (oscillateur)
+## Module Piano (prototype)
+- Clavier tactile de trois octaves, de C3 à B5, avec touches blanches et noires.
+- Défilement horizontal pour accéder à toute l'étendue, touches dessinées en Canvas.
+- Événements Note On / Note Off multi-touch et jusqu'à 16 voix simultanées.
+- Commande de volume maître et pédale Sustain.
+- Synthèse sinusoïdale locale via Oboe; aucune connexion réseau n'est requise après compilation et installation.
 
-**État : prototype de fondation.** Les banques d'instruments, le piano roll, le séquenceur, l'enregistrement multipiste et l'export audio restent à développer.
-
-## Structure du projet
-
-```text
-.
-├── app/
-│   ├── build.gradle.kts
-│   └── src/main/
-│       ├── AndroidManifest.xml
-│       ├── cpp/
-│       │   ├── CMakeLists.txt
-│       │   └── native_audio.cpp
-│       └── java/com/crhimastiano/studiopro/
-│           └── MainActivity.kt
-├── gradle.properties
-└── settings.gradle.kts
-```
+**Important :** le clavier et les contrôles sont implémentés, mais le timbre reste un oscillateur de test, pas un piano échantillonné. Ce prototype ne doit pas être présenté comme un instrument de piano réaliste.
 
 ## Ouvrir et compiler
-1. Cloner ou télécharger ce dépôt, puis ouvrir son dossier racine dans Android Studio.
-2. Utiliser JDK 17. Les versions déclarées sont Android Gradle Plugin 8.7.3 et Kotlin 2.0.21.
-3. Laisser Android Studio synchroniser Gradle et télécharger les dépendances, dont Oboe 1.9.3.
-4. Connecter un téléphone Android avec le débogage USB ou lancer un émulateur, puis exécuter la configuration `app`.
+1. Ouvrir le dossier racine dans Android Studio avec JDK 17.
+2. Laisser Gradle télécharger les dépendances, dont Google Oboe 1.9.3.
+3. Lancer la configuration `app` sur un appareil Android ou un émulateur.
 
-La première synchronisation nécessite une connexion Internet pour récupérer les dépendances. Une fois l'application compilée et installée, le moteur de son de test ne nécessite pas de connexion réseau. Aucun wrapper Gradle n'est actuellement inclus dans ce dépôt.
+La compilation initiale nécessite Internet. Aucun wrapper Gradle n'est actuellement inclus. La cible définie est Android API 26 minimum et API 35 compile/target. Le TECNO Camon 40 est l'appareil visé, mais ce dépôt n'a pas encore été validé sur cet appareil.
 
-Ne téléversez pas les dossiers générés `.gradle/`, `build/`, `.cxx/` ou `local.properties`.
-
-## Compatibilité ciblée
-- Android minimum : API 26 (Android 8.0)
-- Compile/target SDK : 35
-- Audio : Oboe, faible latence demandée; fréquence d'échantillonnage native choisie par l'appareil
-- Appareil visé : TECNO Camon 40; une validation sur appareil réel reste nécessaire
-
-## Dépôt
-https://github.com/crhimastianoofficiel/CRHIMASTIANO-STUDIO-Pro-
+Les répertoires générés `.gradle/`, `build/` et `.cxx/` ainsi que `local.properties` ne doivent pas être téléversés.
 
 ## Technologies
-- Kotlin et Android Gradle Plugin
-- C++17 et CMake
-- Google Oboe
-- Android SDK
+- Kotlin et Android SDK
+- Android Gradle Plugin 8.7.3 / Kotlin 2.0.21
+- C++17, CMake 3.22.1 et Google Oboe
 
 ## Licence
 À définir par le propriétaire du projet.
