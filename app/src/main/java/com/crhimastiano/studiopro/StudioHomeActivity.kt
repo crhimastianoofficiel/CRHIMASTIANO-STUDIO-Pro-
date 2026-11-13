@@ -12,7 +12,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
-/** Native studio dashboard. Only the implemented piano is actionable. */
+/** Native studio dashboard. Only implemented modules are actionable. */
 class StudioHomeActivity : Activity() {
     private val background = Color.rgb(10, 11, 14)
     private val surface = Color.rgb(23, 25, 30)
@@ -23,7 +23,7 @@ class StudioHomeActivity : Activity() {
 
     private val modules = listOf(
         Module("Piano", "Clavier tactile · audio local", "♫", true),
-        Module("Beat Maker", "Batterie et patterns", "▦"),
+        Module("Beat Maker", "Séquenceur rythmique · 16 pas", "▦", true),
         Module("Piano Roll / MIDI", "Édition et séquençage MIDI", "⌁"),
         Module("Enregistrement vocal", "Capture microphone", "●"),
         Module("Multipiste", "Pistes audio et MIDI", "▤"),
@@ -70,7 +70,7 @@ class StudioHomeActivity : Activity() {
             background = rounded(Color.rgb(38, 34, 25), dp(18), Color.rgb(86, 69, 38))
         }
         hero.addView(label("PRÊT À CRÉER", 11f, gold, true).apply { letterSpacing = 0.1f })
-        hero.addView(label("Ouvrez le piano et jouez immédiatement.", 15f, Color.WHITE).apply {
+        hero.addView(label("Ouvrez le piano ou le Beat Maker.", 15f, Color.WHITE).apply {
             setPadding(0, dp(7), 0, 0)
         })
         page.addView(hero, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(24) })
@@ -108,7 +108,12 @@ class StudioHomeActivity : Activity() {
             isClickable = module.available
             isFocusable = module.available
             if (module.available) setOnClickListener {
-                startActivity(Intent(this@StudioHomeActivity, MainActivity::class.java))
+                val destination = when (module.title) {
+                    "Piano" -> MainActivity::class.java
+                    "Beat Maker" -> BeatMakerActivity::class.java
+                    else -> return@setOnClickListener
+                }
+                startActivity(Intent(this@StudioHomeActivity, destination))
             }
         }
         val top = LinearLayout(this).apply {

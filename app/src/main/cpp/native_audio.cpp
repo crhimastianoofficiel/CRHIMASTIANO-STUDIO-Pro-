@@ -11,6 +11,7 @@
 
 namespace {
 constexpr int kMaxVoices = 16;
+constexpr int kDrumCount = 4;
 constexpr double kTwoPi = 2.0 * M_PI;
 constexpr float kVoiceAmplitude = 0.12f;
 
@@ -60,12 +61,41 @@ public:
         }
     }
 
+    void setBeatPattern(int instrument, uint32_t steps) {
+        if (instrument >= 0 && instrument < kDrumCount) {
+            beatPatterns_[instrument].store(steps & 0xFFFFu, std::memory_order_release);
+        }
+    }
+
+    void setBeatTempo(int bpm) {
+        beatTempo_.store(std::clamp(bpm, 40, 220), std::memory_order_relaxed);
+    }
+
+    bool startBeat() {
+        beatPlaying_.store(true, std::memory_order_release);
+        return true;
+    }
+
+    void stopBeat() {
+        beatPlaying_.store(false, std::memory_order_release);
+    }
+
+    void resetBeat() {
+        beatPlaying_.store(false, std::memory_order_release);
+        beatStepPublished_.store(-1, std::memory_order_release);
+    }
+
+    int currentBeatStep() const {
+        return beatStepPublished_.load(std::memory_order_acquire);
+    }
+
     void stopAll() {
         for (auto& voice : voices_) {
             voice.held.store(false, std::memory_order_release);
             voice.active.store(false, std::memory_order_release);
         }
         sustain_.store(false, std::memory_order_release);
+        stopBeat();
     }
 
     oboe::DataCallbackResult onAudioReady(
@@ -80,8 +110,40 @@ public:
             return oboe::DataCallbackResult::Stop;
         }
         const float masterVolume = volume_.load(std::memory_order_relaxed);
+        const bool beatPlaying = beatPlaying_.load(std::memory_order_acquire);
+        const int bpm = beatTempo_.load(std::memory_order_relaxed);
+        const double framesPerStep = sampleRate * 60.0 / static_cast<double>(bpm) / 4.0;
+        const float kickDecay = static_cast<float>(std::exp(-1.0 / (sampleRate * 0.24)));
+        const float snareDecay = static_cast<float>(std::exp(-1.0 / (sampleRate * 0.16)));
+        const float hatDecay = static_cast<float>(std::exp(-1.0 / (sampleRate * 0.075)));
+        const float percDecay = static_cast<float>(std::exp(-1.0 / (sampleRate * 0.20)));
+
+        if (beatPlaying && !beatWasPlaying_) {
+            beatWasPlaying_ = true;
+            beatStep_ = 0;
+            beatFramesRemaining_ = 0.0;
+        } else if (!beatPlaying && beatWasPlaying_) {
+            beatWasPlaying_ = false;
+            beatStep_ = 0;
+            beatFramesRemaining_ = 0.0;
+            beatStepPublished_.store(-1, std::memory_order_release);
+            for (auto& drum : drums_) drum.envelope = 0.0f;
+        }
 
         for (int32_t frame = 0; frame < numFrames; ++frame) {
+            if (beatPlaying) {
+                if (beatFramesRemaining_ <= 0.0) {
+                    beatStepPublished_.store(beatStep_, std::memory_order_release);
+                    for (int instrument = 0; instrument < kDrumCount; ++instrument) {
+                        const uint32_t mask = beatPatterns_[instrument].load(std::memory_order_acquire);
+                        if ((mask & (1u << beatStep_)) != 0u) triggerDrum(instrument);
+                    }
+                    beatStep_ = (beatStep_ + 1) & 15;
+                    beatFramesRemaining_ += framesPerStep;
+                }
+                beatFramesRemaining_ -= 1.0;
+            }
+
             float mixedSample = 0.0f;
             int activeVoiceCount = 0;
             for (auto& voice : voices_) {
@@ -97,7 +159,8 @@ public:
             if (activeVoiceCount > 0) {
                 mixedSample *= kVoiceAmplitude / std::sqrt(static_cast<float>(activeVoiceCount));
             }
-            mixedSample = std::clamp(mixedSample * masterVolume, -0.8f, 0.8f);
+            mixedSample += renderDrums(sampleRate, kickDecay, snareDecay, hatDecay, percDecay);
+            mixedSample = std::clamp(mixedSample * masterVolume, -0.95f, 0.95f);
             for (int32_t channel = 0; channel < channelCount; ++channel) {
                 output[frame * channelCount + channel] = mixedSample;
             }
@@ -106,13 +169,78 @@ public:
     }
 
 private:
+    struct DrumVoice {
+        float envelope = 0.0f;
+        double phase = 0.0;
+        uint32_t noiseState = 0x9E3779B9u;
+        float previousNoise = 0.0f;
+    };
+
     static bool isValidVoice(int voiceIndex) {
         return voiceIndex >= 0 && voiceIndex < kMaxVoices;
+    }
+
+    float noise(DrumVoice& drum) {
+        drum.noiseState ^= drum.noiseState << 13;
+        drum.noiseState ^= drum.noiseState >> 17;
+        drum.noiseState ^= drum.noiseState << 5;
+        return static_cast<float>(drum.noiseState & 0xFFFFu) / 32767.5f - 1.0f;
+    }
+
+    void triggerDrum(int instrument) {
+        auto& drum = drums_[instrument];
+        drum.envelope = 1.0f;
+        drum.phase = 0.0;
+    }
+
+    float renderDrums(double sampleRate, float kickDecay, float snareDecay, float hatDecay, float percDecay) {
+        float sample = 0.0f;
+        auto& kick = drums_[0];
+        if (kick.envelope > 0.0001f) {
+            const double frequency = 42.0 + 145.0 * kick.envelope;
+            sample += static_cast<float>(std::sin(kick.phase)) * kick.envelope * 0.78f;
+            kick.phase += kTwoPi * frequency / sampleRate;
+            if (kick.phase >= kTwoPi) kick.phase -= kTwoPi;
+            kick.envelope *= kickDecay;
+        }
+        auto& snare = drums_[1];
+        if (snare.envelope > 0.0001f) {
+            const float currentNoise = noise(snare);
+            sample += (currentNoise * 0.72f + static_cast<float>(std::sin(snare.phase)) * 0.18f) * snare.envelope * 0.52f;
+            snare.phase += kTwoPi * 185.0 / sampleRate;
+            if (snare.phase >= kTwoPi) snare.phase -= kTwoPi;
+            snare.envelope *= snareDecay;
+        }
+        auto& hat = drums_[2];
+        if (hat.envelope > 0.0001f) {
+            const float currentNoise = noise(hat);
+            const float highPassed = currentNoise - hat.previousNoise * 0.92f;
+            hat.previousNoise = currentNoise;
+            sample += highPassed * hat.envelope * 0.34f;
+            hat.envelope *= hatDecay;
+        }
+        auto& percussion = drums_[3];
+        if (percussion.envelope > 0.0001f) {
+            sample += static_cast<float>(std::sin(percussion.phase)) * percussion.envelope * 0.34f;
+            percussion.phase += kTwoPi * 620.0 / sampleRate;
+            if (percussion.phase >= kTwoPi) percussion.phase -= kTwoPi;
+            percussion.envelope *= percDecay;
+        }
+        return sample;
     }
 
     std::array<Voice, kMaxVoices> voices_{};
     std::atomic<float> volume_{0.8f};
     std::atomic<bool> sustain_{false};
+    std::array<std::atomic<uint32_t>, kDrumCount> beatPatterns_{};
+    std::atomic<int> beatTempo_{120};
+    std::atomic<bool> beatPlaying_{false};
+    std::atomic<int> beatStepPublished_{-1};
+    // These are only accessed on Oboe's callback thread.
+    std::array<DrumVoice, kDrumCount> drums_{};
+    bool beatWasPlaying_ = false;
+    int beatStep_ = 0;
+    double beatFramesRemaining_ = 0.0;
 };
 
 ToneEngine gEngine;
@@ -186,6 +314,56 @@ Java_com_crhimastiano_studiopro_MainActivity_nativeSetSustain(
     gEngine.setSustain(enabled == JNI_TRUE);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_crhimastiano_studiopro_MainActivity_nativeStop(
+    JNIEnv*, jobject
+) {
+    gEngine.stopAll();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_crhimastiano_studiopro_BeatMakerActivity_nativeSetBeatPattern(
+    JNIEnv*, jobject, jint instrument, jint mask
+) {
+    gEngine.setBeatPattern(instrument, static_cast<uint32_t>(mask));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_crhimastiano_studiopro_BeatMakerActivity_nativeSetBeatTempo(
+    JNIEnv*, jobject, jint bpm
+) {
+    gEngine.setBeatTempo(bpm);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_crhimastiano_studiopro_BeatMakerActivity_nativeBeatPlay(
+    JNIEnv*, jobject
+) {
+    if (!ensureStreamStarted()) return JNI_FALSE;
+    return gEngine.startBeat() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_crhimastiano_studiopro_BeatMakerActivity_nativeBeatStop(
+    JNIEnv*, jobject
+) {
+    gEngine.stopBeat();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_crhimastiano_studiopro_BeatMakerActivity_nativeBeatReset(
+    JNIEnv*, jobject
+) {
+    gEngine.resetBeat();
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_crhimastiano_studiopro_BeatMakerActivity_nativeBeatCurrentStep(
+    JNIEnv*, jobject
+) {
+    return gEngine.currentBeatStep();
+}
+
 // Preserve the original single-note JNI entry points for compatibility.
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_crhimastiano_studiopro_MainActivity_nativeStart(
@@ -200,13 +378,6 @@ Java_com_crhimastiano_studiopro_MainActivity_nativeSetFrequency(
     JNIEnv*, jobject, jfloat frequencyHz
 ) {
     if (std::isfinite(frequencyHz) && frequencyHz > 0.0f) gEngine.noteOn(0, frequencyHz);
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_crhimastiano_studiopro_MainActivity_nativeStop(
-    JNIEnv*, jobject
-) {
-    gEngine.stopAll();
 }
 
 extern "C" JNIEXPORT void JNICALL
