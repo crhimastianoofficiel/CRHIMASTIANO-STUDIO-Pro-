@@ -1,7 +1,6 @@
 package com.crhimastiano.studiopro
 
 import android.app.Activity
-import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -144,7 +143,10 @@ class BeatMakerActivity : Activity() {
         transport.addView(actionButton("■  STOP", Color.rgb(48, 49, 55)) {
             nativeBeatStop()
             statusLabel.text = "Lecture arrêtée."
-        }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginHorizontal = dp(5) })
+        }, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
+            marginStart = dp(5)
+            marginEnd = dp(5)
+        })
         transport.addView(actionButton("RESET", Color.rgb(48, 49, 55)) {
             nativeBeatReset()
             pattern.fill(0)
