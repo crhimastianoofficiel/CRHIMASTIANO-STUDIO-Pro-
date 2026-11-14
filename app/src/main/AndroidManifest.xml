@@ -16,6 +16,7 @@
         <activity
             android:name=".VoiceRecorderActivity"
             android:exported="false" />
+        <!-- StudioHomeActivity is the sole launcher; module navigation opens these internal screens. -->
         <activity
             android:name=".StudioHomeActivity"
             android:exported="true">
