@@ -12,7 +12,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
-/** Native studio dashboard. Only implemented modules are actionable. */
+/** Native studio dashboard. Only modules with working implementations are actionable. */
 class StudioHomeActivity : Activity() {
     private val background = Color.rgb(10, 11, 14)
     private val surface = Color.rgb(23, 25, 30)
@@ -25,7 +25,7 @@ class StudioHomeActivity : Activity() {
         Module("Piano", "Clavier tactile · audio local", "♫", true),
         Module("Beat Maker", "Séquenceur rythmique · 16 pas", "▦", true),
         Module("Piano Roll / MIDI", "Édition et séquençage MIDI", "⌁"),
-        Module("Enregistrement vocal", "Capture microphone", "●"),
+        Module("Enregistrement vocal", "Capture microphone · sauvegarde WAV", "●", true),
         Module("Multipiste", "Pistes audio et MIDI", "▤"),
         Module("Chœurs et Duo", "Voix et arrangement", "♫"),
         Module("Voix IA", "Fournisseur spécialisé à intégrer", "✧"),
@@ -70,7 +70,7 @@ class StudioHomeActivity : Activity() {
             background = rounded(Color.rgb(38, 34, 25), dp(18), Color.rgb(86, 69, 38))
         }
         hero.addView(label("PRÊT À CRÉER", 11f, gold, true).apply { letterSpacing = 0.1f })
-        hero.addView(label("Ouvrez le piano ou le Beat Maker.", 15f, Color.WHITE).apply {
+        hero.addView(label("Ouvrez le piano, le séquenceur ou l'enregistreur vocal.", 15f, Color.WHITE).apply {
             setPadding(0, dp(7), 0, 0)
         })
         page.addView(hero, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(24) })
@@ -111,6 +111,7 @@ class StudioHomeActivity : Activity() {
                 val destination = when (module.title) {
                     "Piano" -> MainActivity::class.java
                     "Beat Maker" -> BeatMakerActivity::class.java
+                    "Enregistrement vocal" -> VoiceRecorderActivity::class.java
                     else -> return@setOnClickListener
                 }
                 startActivity(Intent(this@StudioHomeActivity, destination))
