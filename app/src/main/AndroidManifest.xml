@@ -29,7 +29,8 @@
         <activity
             android:name=".CrashReportActivity"
             android:exported="true"
-            android:label="Diagnostic des crashs">
+            android:label="Diagnostic des crashs"
+            android:process=":crashdiagnostic">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -39,7 +40,8 @@
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.crashfiles"
             android:exported="false"
-            android:grantUriPermissions="true">
+            android:grantUriPermissions="true"
+            android:process=":crashdiagnostic">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/crash_file_paths" />

@@ -1,7 +1,9 @@
 package com.crhimastiano.studiopro
 
+import android.app.ActivityManager
 import android.app.Application
 import android.os.Build
+import android.os.Process
 import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintWriter
@@ -10,18 +12,38 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Persists uncaught Kotlin/Java exceptions before delegating to Android's normal crash handler. */
+/** Persists uncaught Kotlin/Java exceptions from the main app process only. */
 class CrashReportApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+
+        // Android creates this Application in every process. Keep diagnostic-process startup
+        // deliberately minimal: no crash handler, studio initialization, or audio loading there.
+        if (!isMainApplicationProcess()) return
+
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
                 saveCrashReport(thread, throwable)
-            } catch (_: Exception) {
-                // Preserve normal crash handling even if private storage is unavailable.
+            } catch (_: Throwable) {
+                // Always delegate the original crash, even if report persistence fails.
             }
             previousHandler?.uncaughtException(thread, throwable)
+        }
+    }
+
+    private fun isMainApplicationProcess(): Boolean {
+        return try {
+            val activityManager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager ?: return false
+            val currentPid = Process.myPid()
+            val currentProcessName = activityManager.runningAppProcesses
+                ?.firstOrNull { it.pid == currentPid }
+                ?.processName
+            // Fail closed if Android cannot identify the process; this avoids running app-only
+            // initialization in the isolated diagnostic process.
+            currentProcessName == packageName
+        } catch (_: RuntimeException) {
+            false
         }
     }
 
@@ -44,11 +66,16 @@ class CrashReportApplication : Application() {
         }
 
         val reportBytes = writer.toString().toByteArray(Charsets.UTF_8)
+        // Write and sync the timestamped copy first so a crash during latest-report replacement
+        // still leaves a recoverable report in the shared app-private files directory.
+        FileOutputStream(File(reportDirectory, "crash-$timestamp.txt"), false).use { output ->
+            output.write(reportBytes)
+            output.fd.sync()
+        }
         FileOutputStream(File(reportDirectory, LATEST_REPORT), false).use { output ->
             output.write(reportBytes)
             output.fd.sync()
         }
-        File(reportDirectory, "crash-$timestamp.txt").writeBytes(reportBytes)
     }
 
     companion object {
