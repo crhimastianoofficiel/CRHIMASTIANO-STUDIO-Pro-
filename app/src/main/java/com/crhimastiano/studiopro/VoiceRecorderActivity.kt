@@ -149,35 +149,38 @@ class VoiceRecorderActivity : Activity() {
             if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
                 throw IllegalStateException("AudioRecord n'est pas passé en mode enregistrement.")
             }
+            var totalBytes = 0L
             BufferedOutputStream(FileOutputStream(file), bufferBytes).use { output ->
                 output.write(wavHeader(0))
                 val pcm = ByteArray(bufferBytes)
-                var totalBytes = 0L
                 while (recording) {
                     val count = recorder.read(pcm, 0, pcm.size, AudioRecord.READ_BLOCKING)
                     if (count > 0) {
                         val alignedCount = count and -2
                         if (alignedCount > 0) {
-                            output.write(pcm, 0, alignedCount)
                             totalBytes += alignedCount
-                            if (totalBytes > MAX_WAV_DATA_BYTES) throw IllegalStateException("La prise dépasse la taille maximale prise en charge par WAV.")
+                            if (totalBytes > MAX_WAV_DATA_BYTES) {
+                                throw IllegalStateException("La prise dépasse la taille maximale prise en charge par WAV.")
+                            }
+                            output.write(pcm, 0, alignedCount)
                         }
                     } else if (count < 0 && recording) {
                         throw IllegalStateException("Erreur AudioRecord : ${audioRecordError(count)}")
                     }
                 }
                 output.flush()
-                successful = totalBytes > 0
             }
-            if (successful) {
-                RandomAccessFile(file, "rw").use { wav ->
-                    wav.seek(0)
-                    wav.write(wavHeader(file.length() - WAV_HEADER_BYTES))
-                }
-            } else {
-                throw IllegalStateException("Aucun son n'a été capturé.")
+            if (totalBytes == 0L) throw IllegalStateException("Aucun son n'a été capturé.")
+
+            // Mark successful only after the WAV header has been finalized successfully.
+            RandomAccessFile(file, "rw").use { wav ->
+                wav.seek(0)
+                wav.write(wavHeader(totalBytes))
+                wav.fd.sync()
             }
+            successful = true
         } catch (e: Exception) {
+            successful = false
             failure = e.localizedMessage ?: "Erreur pendant l'enregistrement."
         } finally {
             try {
