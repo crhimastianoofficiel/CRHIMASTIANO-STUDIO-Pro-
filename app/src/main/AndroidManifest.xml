@@ -2,6 +2,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
+        android:name=".CrashReportApplication"
         android:allowBackup="true"
         android:label="CRHIMASTIANO STUDIO PRO"
         android:supportsRtl="true"
@@ -16,7 +17,7 @@
         <activity
             android:name=".VoiceRecorderActivity"
             android:exported="false" />
-        <!-- StudioHomeActivity is the sole launcher; module navigation opens these internal screens. -->
+        <!-- StudioHomeActivity remains the dashboard launcher; module navigation opens internal screens. -->
         <activity
             android:name=".StudioHomeActivity"
             android:exported="true">
@@ -25,5 +26,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".CrashReportActivity"
+            android:exported="true"
+            android:label="Diagnostic des crashs">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.crashfiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/crash_file_paths" />
+        </provider>
     </application>
 </manifest>

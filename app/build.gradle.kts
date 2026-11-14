@@ -46,4 +46,5 @@ android {
 
 dependencies {
     implementation("com.google.oboe:oboe:1.9.3")
+    implementation("androidx.core:core:1.15.0")
 }
