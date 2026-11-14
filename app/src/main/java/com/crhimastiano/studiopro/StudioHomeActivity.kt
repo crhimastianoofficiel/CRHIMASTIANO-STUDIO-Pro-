@@ -25,7 +25,7 @@ class StudioHomeActivity : Activity() {
         Module("Piano", "Clavier tactile · audio local", "♫", true),
         Module("Beat Maker", "Séquenceur rythmique · 16 pas", "▦", true),
         Module("Piano Roll / MIDI", "Édition et séquençage MIDI", "⌁"),
-        Module("Enregistrement vocal", "Capture microphone · sauvegarde WAV", "●", true),
+        Module("Enregistrement vocal", "AudioRecord · prises WAV locales", "●", true),
         Module("Multipiste", "Pistes audio et MIDI", "▤"),
         Module("Chœurs et Duo", "Voix et arrangement", "♫"),
         Module("Voix IA", "Fournisseur spécialisé à intégrer", "✧"),
