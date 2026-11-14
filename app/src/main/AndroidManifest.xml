@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:allowBackup="true"
         android:label="CRHIMASTIANO STUDIO PRO"
@@ -10,6 +12,9 @@
             android:exported="false" />
         <activity
             android:name=".BeatMakerActivity"
+            android:exported="false" />
+        <activity
+            android:name=".VoiceRecorderActivity"
             android:exported="false" />
         <activity
             android:name=".StudioHomeActivity"
