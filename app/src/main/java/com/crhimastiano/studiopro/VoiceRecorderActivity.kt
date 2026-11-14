@@ -23,7 +23,6 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.text.DateFormat
 import java.util.Date
-import java.util.concurrent.atomic.AtomicBoolean
 
 /** Real offline microphone capture saved as PCM16 WAV files in the app's private storage. */
 class VoiceRecorderActivity : Activity() {
@@ -34,7 +33,6 @@ class VoiceRecorderActivity : Activity() {
     @Volatile private var recording = false
     private var audioRecord: AudioRecord? = null
     private var recordingThread: Thread? = null
-    private var recordingFile: File? = null
     private var player: MediaPlayer? = null
     private var playingFile: File? = null
     private var destroying = false
@@ -130,8 +128,8 @@ class VoiceRecorderActivity : Activity() {
         }
         val outputFile = File(directory, "prise_${System.currentTimeMillis()}.wav")
         audioRecord = recorder
-        recordingFile = outputFile
         recording = true
+        recordButton.isEnabled = true
         recordButton.text = "■  ARRÊTER"
         recordButton.setBackgroundColor(Color.rgb(145, 38, 42))
         statusText.text = "Enregistrement en cours…"
@@ -190,9 +188,9 @@ class VoiceRecorderActivity : Activity() {
             runOnUiThread {
                 if (audioRecord === recorder) audioRecord = null
                 recordingThread = null
-                recordingFile = null
                 recording = false
                 if (!destroying) {
+                    recordButton.isEnabled = true
                     recordButton.text = "●  ENREGISTRER"
                     recordButton.setBackgroundColor(Color.rgb(112, 82, 30))
                     statusText.text = if (successful) "Prise WAV enregistrée localement." else "Échec de l'enregistrement : ${failure ?: "erreur inconnue"}"
